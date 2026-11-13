@@ -1,0 +1,2 @@
+# nutricrewai
+Projeto usando CrewAI.
