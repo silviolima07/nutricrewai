@@ -43,7 +43,7 @@ class OpenRouterProvider:
                 }
             ],
             "temperature": 0.2,
-            "max_tokens": 700
+            "max_tokens": 4096
         }
 
         headers = {
@@ -68,9 +68,21 @@ class OpenRouterProvider:
 
             resposta.raise_for_status()
 
-            descricao = resposta.json()[
-                "choices"
-            ][0]["message"]["content"]
+            dados = resposta.json()
+            escolha = dados["choices"][0]
+            mensagem = escolha["message"]
+
+            descricao = mensagem.get("content")
+
+            print("Modelo utilizado:", dados.get("model"))
+            print("Motivo do encerramento:", escolha.get("finish_reason"))
+            print("Conteúdo vazio:", not bool(descricao))
+
+            if not isinstance(descricao, str) or not descricao.strip():
+                raise ValueError(
+                    "OpenRouter não retornou uma descrição textual"
+                )
+
 
             return VisionResult(
                 descricao=descricao,
