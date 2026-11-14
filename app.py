@@ -7,9 +7,10 @@ from groq import Groq
 import os
 from utils import encode_image, image_to_text, executar_crew
 
-llm_model = 'qwen/qwen3.8-27b'
+#llm_model = 'qwen/qwen3.8-27b'
 
-from crew_nutri import CrewNutri
+
+from app.services.crew_nutri import CrewNutri
 
 crew_nutricao = CrewNutri()
 
@@ -18,6 +19,10 @@ load_dotenv()
 
 # Obter a chave da API GROQ
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+
+GROQ_VISION_MODEL = os.getenv('GROQ_VISION_MODEL')
+
+llm_model = GROQ_VISION_MODEL
 
 # Obter a chave da API OPENROUTER
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
