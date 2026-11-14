@@ -1,7 +1,7 @@
 import os
 from crewai import Agent, Task, Crew, Process
 from dotenv import load_dotenv
-import streamlit as st
+
 from textwrap import dedent
 
 
@@ -15,20 +15,23 @@ load_dotenv()
 
 # Obter a chave da API GROQ
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+GROQ_VISION_MODEL = os.getenv('GROQ_VISION_MODEL')
 
 from crewai import LLM
 
 llm_model = LLM(
-    model="groq/qwen/qwen3.8-27b",
-    max_tokens=400,
+    model=GROQ_VISION_MODEL,
+    max_tokens=1600,
     temperature=0.2,
 )
 
+print("Criar a classe CrewNutri")
 class CrewNutri:
     def __init__(self):
         self.crew = self._criar_crew()
 
     def _criar_crew(self):
+        print("Criar crew, agente e task")
         # Definindo os agentes
         nutri = Agent(
          role="Nutricionista",
@@ -119,6 +122,7 @@ Consulte sempre um médico Nutricionista para avaliar as recomendações.
         )
 
     def kickoff(self, inputs):
+        print("Executar a crew e retornar resposta")
         # Executa o Crew com o tópico fornecido
         resposta = self.crew.kickoff(inputs=inputs)
         return resposta.raw
