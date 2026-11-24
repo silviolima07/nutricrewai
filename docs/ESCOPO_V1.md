@@ -181,3 +181,15 @@ app/services/
 - [ ] As credenciais não aparecem em logs ou repositório.
 
 **Limite:** o fallback da v1.0 atende **somente à etapa de visão**. Não inclui fallback do agente nutricional CrewAI, balanceamento de carga, seleção dinâmica por preço ou provedores adicionais.
+
+
+## 12. Melhoria para versões futuras — revisão humana por confiança
+
+A v1.0 segue automaticamente da visão para a análise nutricional quando há alimentos identificáveis. Em uma versão futura, o responsável pela análise poderá habilitar a revisão humana condicional antes de chamar o CrewAI.
+
+- O serviço de visão deverá retornar os alimentos identificados com uma pontuação de confiança para cada item.
+- Com a revisão habilitada, o LangGraph poderá seguir direto quando **todos** os itens estiverem acima do limiar configurado. O valor inicial proposto é **80%**. Se algum item estiver no limiar, abaixo dele ou sem pontuação, o fluxo pausa e destaca esse item para revisão.
+- Na pausa, o usuário poderá confirmar a descrição, corrigir os alimentos identificados ou cancelar. Após a confirmação, o fluxo retoma a execução com a descrição aprovada e as observações originais.
+- O caminho `sem_alimentos` continua encerrando a análise sem chamar o CrewAI.
+
+A pontuação inicial do modelo serve como sinal de triagem. Para interpretá-la como probabilidade de acerto e ajustar o limiar, será necessário comparar os resultados com fotos de alimentos previamente identificados.

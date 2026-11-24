@@ -1,33 +1,17 @@
-import os
-from crewai import Agent, Task, Crew, Process
-from dotenv import load_dotenv
-
 from textwrap import dedent
 
+from crewai import Agent, Crew, LLM, Process, Task
 
-from MyLLM import MyLLM
+from app.config import Settings
 
 
-#from groq import Groq
-
-# Carregar variáveis de ambiente
-load_dotenv()
-
-# Obter a chave da API GROQ
-GROQ_API_KEY = os.getenv('GROQ_API_KEY')
-GROQ_VISION_MODEL = os.getenv('GROQ_VISION_MODEL')
-
-from crewai import LLM
-
-llm_model = LLM(
-    model=GROQ_VISION_MODEL,
-    max_tokens=1600,
-    temperature=0.2,
-)
-
-print("Criar a classe CrewNutri")
 class CrewNutri:
-    def __init__(self):
+    def __init__(self, model: str | None = None):
+        if model is None:
+            settings = Settings()
+            model = settings.groq_vision_model or settings.groq_nutrition_model
+
+        self.llm = LLM(model=model, max_tokens=1600, temperature=0.2)
         self.crew = self._criar_crew()
 
     def _criar_crew(self):
@@ -38,7 +22,7 @@ class CrewNutri:
          goal="Identificar os alimentos na descrição. Sempre considere as observações feitas pelo usuário em sua análise.",
          allow_delegation=False,
          tools=[], 
-         llm=llm_model,
+         llm=self.llm,
          verbose=True,
          backstory=dedent("""
               Você é um Nutricionista com 10 anos de experiência em análise de alimentos e criação de dietas personalizadas.
