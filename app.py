@@ -1,190 +1,122 @@
-from PIL import Image
-import streamlit as st
-#from MyLLM import CustomLLM
-from textwrap import dedent
-from dotenv import load_dotenv
-from groq import Groq
+import hashlib
 import os
-from utils import encode_image, image_to_text, executar_crew
+from pathlib import Path
 
-#llm_model = 'qwen/qwen3.8-27b'
+from dotenv import load_dotenv
+import requests
+import streamlit as st
 
 
-from app.services.crew_nutri import CrewNutri
-
-crew_nutricao = CrewNutri()
-
-# Carregar variáveis de ambiente
 load_dotenv()
+IMAGENS = Path(__file__).resolve().parent / "img"
+API_URL = os.getenv("NUTRICREW_API_URL", "http://127.0.0.1:8000").rstrip("/")
+MAX_BYTES = 5 * 1024 * 1024
 
-# Obter a chave da API GROQ
-GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 
-GROQ_VISION_MODEL = os.getenv('GROQ_VISION_MODEL')
-
-llm_model = GROQ_VISION_MODEL
-
-# Obter a chave da API OPENROUTER
-OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
-
-#st.write("GROQ_API_KEY: ",GROQ_API_KEY)
-
-client = Groq(api_key=GROQ_API_KEY)
-
-alimentos = Image.open("img/alimentos.png")
-st.image(alimentos,caption="",use_container_width=False)
-
-html_page_title = """
-<div style="background-color:black;padding=60px">
-        <p style='text-align:center;font-size:60px;font-weight:bold; color:red'>Avalie sua Alimentação</p>
-</div>
-"""               
-st.markdown(html_page_title, unsafe_allow_html=True)
-
-garfo_colher = Image.open("img/garfo_colher.png")
-st.sidebar.image(garfo_colher,caption="",use_container_width=False)
-
-st.sidebar.markdown("# Menu")
-option = st.sidebar.selectbox("Menu", ["Carregar Imagem", 'About'], label_visibility='hidden')
-
-if option == 'Carregar Imagem':
-    #st.sidebar.markdown("#### Objetivo: informar se é saudável ou não.")
-    
-    observacoes = st.sidebar.multiselect(
-    "Observações / Objetivo",
-    ["Intolerâcia à lactose", "Alergia a amendoin", "Emagrecer", 'Manter o peso', 'Ganhar massa muscular', 'Diabetes', 'Não consome carne vermelha', 'Sedentário', 'Obeso' ],
-    default=['Manter o peso']
-    )
-
-    st.sidebar.write("Observações: ", observacoes)
-    
+def solicitar_analise(nome, dados, mime_type, observacoes):
     try:
-        st.markdown("## Upload Image")
-        uploaded_img = st.file_uploader("Envie imagem em PNG/JPG", type=['png', 'jpeg'])
-        if uploaded_img is not None:
-            img = Image.open(uploaded_img) # Load the image
-            image_path="image.png"
-            img.save(image_path)
-            # Getting the base64 string
-            base64_image = encode_image(image_path)
-            # Usando HTML para centralizar a imagem
-            st.markdown(
-        f"""
-        <div style="display: flex; justify-content: center;">
-            <img src="data:image/png;base64,{base64_image}" alt="Imagem" style="width: 80%; height: auto;">
-        </div>
-        """,
-        unsafe_allow_html=True
+        resposta = requests.post(
+            f"{API_URL}/api/v1/analisar",
+            files={"imagem": (nome, dados, mime_type)},
+            data={"observacoes": observacoes},
+            timeout=(5, 120),
+        )
+    except requests.Timeout:
+        st.error("A API demorou a responder. Tente novamente mais tarde.")
+        return None
+    except requests.RequestException:
+        st.error("Não foi possível acessar a API. Confira se o Uvicorn está rodando.")
+        return None
+
+    try:
+        resultado = resposta.json()
+    except ValueError:
+        st.error("A API retornou uma resposta que não pôde ser lida.")
+        return None
+
+    if not resposta.ok:
+        detalhe = resultado.get("detail") if isinstance(resultado, dict) else None
+        st.error(detalhe if isinstance(detalhe, str) else f"Falha na análise (HTTP {resposta.status_code}).")
+        return None
+
+    if (
+        not isinstance(resultado, dict)
+        or not isinstance(resultado.get("descricao"), str)
+        or resultado.get("status") not in ("analisado", "sem_alimentos")
+        or (
+            resultado["status"] == "analisado"
+            and not isinstance(resultado.get("relatorio"), str)
+        )
+    ):
+        st.error("A API retornou um resultado em formato inesperado.")
+        return None
+
+    return resultado
+
+
+st.title("Avalie sua alimentação")
+st.sidebar.image(str(IMAGENS / "garfo_e_colher.png"))
+option = st.sidebar.selectbox("Menu", ["Carregar imagem", "Sobre"])
+
+if option == "Carregar imagem":
+    observacoes = st.sidebar.multiselect(
+        "Observações e objetivos",
+        [
+            "Intolerância à lactose", "Alergia a amendoim", "Emagrecer",
+            "Manter o peso", "Ganhar massa muscular", "Diabetes",
+            "Não consome carne vermelha", "Sedentário", "Obeso",
+        ],
+        default=["Manter o peso"],
     )
-            
-            prompt = dedent("""         
-    You are an expert assistant in recognizing and describing foods in images with precision.
-    
-    Your role is to analyze images and provide description of foods, giving details, like color,size and accurate descriptions of foods.
+    arquivo = st.file_uploader("Envie uma foto JPEG ou PNG", type=["jpg", "jpeg", "png"])
+    if arquivo is None:
+        st.session_state.pop("analise_refeicao", None)
+    elif arquivo.size > MAX_BYTES:
+        st.session_state.pop("analise_refeicao", None)
+        st.error("A imagem deve ter no máximo 5 MiB.")
+    else:
+        dados = arquivo.getvalue()
+        selecao = (hashlib.sha256(dados).digest(), tuple(observacoes))
+        if st.session_state.get("analise_refeicao", (None,))[0] != selecao:
+            st.session_state.pop("analise_refeicao", None)
 
-    Always considering only foods present in the image.
-    
-    Never describe cars, trucks,  places in image, focus on foods only.
+        try:
+            st.image(dados, caption=arquivo.name)
+        except (OSError, ValueError):
+            st.error("Não foi possível abrir a imagem.")
+            st.stop()
 
-    Never turn a description where there is no food or drink.
+        if st.button("Analisar refeição"):
+            st.session_state.pop("analise_refeicao", None)
+            with st.spinner("Analisando a foto e preparando o relatório…"):
+                resultado = solicitar_analise(arquivo.name, dados, arquivo.type, observacoes)
+            if resultado is not None:
+                st.session_state["analise_refeicao"] = (selecao, resultado)
 
-    Never answer describing people and children or animals.
-    
-    If the image contains no food, respond only with the phrase: 'Nenhum alimento ma imagem'.
+        if "analise_refeicao" in st.session_state:
+            _, resultado = st.session_state["analise_refeicao"]
+            if resultado["status"] == "sem_alimentos":
+                st.info(resultado["descricao"])
+            else:
+                st.subheader("Alimentos identificados")
+                st.text(resultado["descricao"])
+                st.subheader("Relatório nutricional")
+                st.markdown(resultado["relatorio"])
+                st.download_button(
+                    "Baixar análise",
+                    data=resultado["relatorio"],
+                    file_name="analise.md",
+                    mime="text/markdown",
+                )
 
-    Description in Portuguese.
-
-}
-    """)
-            st.write(" ")
-           
-           
-            #st.write("LLM Multi Modal to describe image:", llama_mm)    
-            #st.write("LLM Nutri to answer:", llama.model)
-
-            html_page_pergunta = """
-<div style="background-color:black;padding=30px">
-        <p style='text-align:center;font-size:30px;font-weight:bold; color:white'>Que tal Analisar este Alimento?</p>
-</div>
-"""               
-            st.markdown(html_page_pergunta, unsafe_allow_html=True)
-            
-            temp = ', '.join(map(str, observacoes))
-            st.markdown("### Considerações:")
-            for item in temp.split(','):
-                st.write(' - ', item)
-            
-            #answer = 'Resultado da Análise'
-            st.write(" ")
-
-            # Botão para iniciar o processo
-            if st.button ('Iniciar Processo ') :
-                # Quanto clicar no botão carrega um loader
-                #with st.spinner ('Wait for it...we are working...please') :
-                with st.spinner ('Processando .... análise dos alimentos e recomendação sendo gerada.') :        
-                    #result = crew_postagem.kickoff ( inputs ={ 'topic': tema })
-                    try:
-                        descricao = image_to_text(client, llm_model, base64_image, prompt)
-                        # Exibindo a descricao
-                        #st.write("Descrição da imagem:")
-                        
-                        #st.write(descricao)
-                        
-                        inputs = {
-                      'descricao': descricao,
-                      'observacoes': observacoes}
-            
-                        # Executando a crew
-                        answer_desc = "None food in image"
-                        #if descricao.lower() != answer_desc.lower():
-                        if not descricao.lower().startswith('nenhum'):        
-                            st.markdown("### Relatório do Agente Nutricionista")                           
-                            resultado = executar_crew(crew_nutricao, inputs)
-                           
-                            #result_text = resultado.raw
-                            st.markdown('#### '+resultado, unsafe_allow_html=True)
-                            #st.markdown(resultado, unsafe_allow_html=True)
-                            #st.write(resultado)
-                            
-                            # Botão para download
-                            st.download_button(
-                               label="📥 Baixar análise",
-                               data=resultado,
-                               file_name="analise.md",
-                               mime="text/plain"
-                               )
-                        else:
-                            st.markdown("### "+descricao)
-                            st.info("A imagem carregada não apresenta nenhum alimento. Carregue nova imagem.")    
-                        
-                    except Exception as e:
-                        st.error(f"Ocorreu um erro ao executar a crew: {e}")
-    except Exception as e:
-                    st.error(f"Houston we have a problem.")   
-            
-if option == 'About':
-    image_path="img/prato.png"    
-    prato = Image.open(image_path)
-    # Getting the base64 string
-    base64_image = encode_image(image_path)
-       
-    #st.sidebar.image(prato,caption="",use_container_width=True)
-    st.markdown("#### Dois agentes: um agente especialista em imagens e um agente nutricionista.")
-    st.markdown("#### O primeiro descreve a imagem, focando apenas em alimentos.")
-    st.markdown("#### O segundo analisa se o alimento é adequado considerando as observações informadas pelo usuário.")
-    st.markdown("#### Modelos acessados via Groq.")
-    st.markdown("#### Exemplo:")
-    # Usando HTML para centralizar a imagem
+if option == "Sobre":
     st.markdown(
-        f"""
-        <div style="display: flex; justify-content: center;">
-            <img src="data:image/png;base64,{base64_image}" alt="Imagem" style="width: 80%; height: auto;">
-        </div>
-        """,
-        unsafe_allow_html=True
-    )  
-    st.write(" ")     
-    st.markdown("### Resultado da análise:")    
+        "A visão descreve os alimentos visíveis na foto. Quando encontra alimentos, "
+        "o serviço nutricional gera um relatório considerando suas observações."
+    )
+    st.subheader("Exemplo")
+    st.image(str(IMAGENS / "prato.png"))
+    st.subheader("Resultado da análise")
     st.write("""
 Arroz: não há informações explicitas sobre os nutrientes contidos na descrição, mas como o arroz tem sua classificação em diferentes tipos como, arroz branco e arroz integral, ele contém carboidratos no calórico de 130 e fibras como o RIAI. O benefício para a saúde é que ajuda a controlar o nível de açúcar no sangue e a regular o trânsito intestinal. Alternativa mais saudável: no caso de que você optar pelo arroz integral, pois possui 100 calorias e 2gr de fibras por 100gr.
 
@@ -197,4 +129,4 @@ Carne (meat): como a descrição não indica qual tipo de carne, não se sabe qu
 Um resumo final:
 
 Relembrando, a avaliação acima pode variar dependendo do tipo de vegetal. Em definitivo, verificado isso faz com que os alimentos possam ou não ser saudáveis.
-    .""")                
+    .""")

@@ -21,3 +21,16 @@ aceita JPEG e PNG de até 5 MiB e 25 megapixels. A resposta contém
 
 Os testes da API exercitam o endpoint com um executor simulado. Execute
 `uv run --locked python -m pytest` na raiz do projeto.
+
+## Interface Streamlit
+
+Mantenha o Uvicorn rodando e, em outro terminal na raiz do projeto, execute:
+
+```sh
+uv run --locked python -m streamlit run app.py
+```
+
+A interface usa a API em `http://127.0.0.1:8000`. Para outro endereço,
+configure `NUTRICREW_API_URL` no `.env`. Na página **Carregar imagem**,
+selecione uma foto e as observações e clique em **Analisar refeição**.
+Quando houver relatório, o botão **Baixar análise** salva o texto em Markdown.
