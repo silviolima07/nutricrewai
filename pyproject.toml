@@ -10,3 +10,8 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "streamlit>=1.41.1",
 ]
+
+[dependency-groups]
+dev = [
+    "requests-mock>=1.12.1",
+]
